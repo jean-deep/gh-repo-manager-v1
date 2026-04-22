@@ -1,0 +1,750 @@
+
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>GitHub Repo Manager</title>
+ <!-- Tailwind CSS para los estilos -->
+ <script src="https://cdn.tailwindcss.com"></script>
+ <!-- Iconos de Lucide -->
+ <script src="https://unpkg.com/lucide@latest"></script>
+ <style>
+  /* Animación simple de carga */
+  .loader {
+  border-top-color: #3498db;
+  -webkit-animation: spinner 1.5s linear infinite;
+  animation: spinner 1.5s linear infinite;
+  }
+  @keyframes spinner {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+  }
+  /* Ocultar barra de desplazamiento en los logs */
+  #logArea::-webkit-scrollbar { width: 6px; }
+  #logArea::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+  
+  /* Estilos para el details/summary de webhooks */
+  details > summary { list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  
+  /* Pulso para el heartbeat */
+  .heartbeat-ping {
+  animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  @keyframes ping {
+  75%, 100% { transform: scale(2); opacity: 0; }
+  }
+ </style>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800 font-sans pb-10">
+
+ <div class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
+  
+  <header class="text-center mb-10">
+  <i data-lucide="github" class="w-16 h-16 mx-auto text-gray-900 mb-4"></i>
+  <h1 class="text-3xl font-bold text-gray-900">GitHub Repo Manager</h1>
+  <p class="text-gray-500 font-medium mt-1">Made easy, for dummies</p>
+  <p class="text-gray-400 italic text-sm mt-1">"Now you too can use github"</p>
+  </header>
+
+  <!-- PASO 1: AUTENTICACIÓN -->
+  <div id="step1" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 transition-all">
+  <h2 class="text-xl font-semibold mb-4 flex items-center">
+   <span class="bg-blue-100 text-blue-700 rounded-full w-8 h-8 flex items-center justify-center mr-3 text-sm">1</span>
+   Credenciales de Acceso
+  </h2>
+  <div class="space-y-4">
+   <div>
+    <label class="block text-sm font-medium text-gray-700 mb-1">GitHub Personal Access Token (PAT)</label>
+    <input type="password" id="initialToken" placeholder="ghp_xxxxxxxxxxxxxxxxx" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors">
+    <p class="text-xs text-gray-500 mt-1">Necesita permisos de 'repo' para leer y escribir. Tus datos no se guardan en ningún servidor.</p>
+   </div>
+
+   <!-- Configuración de Webhooks -->
+   <details class="group border border-gray-200 rounded-lg p-3 bg-gray-50">
+    <summary class="text-sm font-medium text-gray-700 cursor-pointer flex items-center justify-between">
+    <span class="flex items-center"><i data-lucide="bell" class="w-4 h-4 mr-2 text-gray-500"></i> Notificaciones a Discord / Slack (Opcional)</span>
+    <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform"></i>
+    </summary>
+    <div class="mt-4 space-y-3 pt-3 border-t border-gray-200">
+    <div>
+     <label class="block text-xs font-medium text-gray-600 mb-1">Webhook de Discord</label>
+     <input type="url" id="discordWebhook" placeholder="https://discord.com/api/webhooks/..." class="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white">
+    </div>
+    <div>
+     <label class="block text-xs font-medium text-gray-600 mb-1">Webhook de Slack</label>
+     <input type="url" id="slackWebhook" placeholder="https://hooks.slack.com/services/..." class="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white">
+    </div>
+    </div>
+   </details>
+
+   <button id="btnConnect" onclick="authenticate()" class="w-full bg-gray-900 hover:bg-gray-800 text-white font-medium py-2 px-4 rounded-lg flex justify-center items-center transition-colors">
+    <i data-lucide="log-in" class="w-5 h-5 mr-2"></i> Conectar
+   </button>
+  </div>
+  <div id="authError" class="hidden mt-3 text-sm text-red-600 bg-red-50 p-3 rounded-md"></div>
+  </div>
+
+  <!-- PASO 2: SELECCIÓN DE REPOSITORIO (Oculto al inicio) -->
+  <div id="step2" class="hidden opacity-50 pointer-events-none bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 transition-all duration-300">
+  <h2 class="text-xl font-semibold mb-4 flex items-center">
+   <span class="bg-blue-100 text-blue-700 rounded-full w-8 h-8 flex items-center justify-center mr-3 text-sm">2</span>
+   Seleccionar o Crear Repositorio
+  </h2>
+  
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+   <!-- Seleccionar existente (Menu personalizado) -->
+   <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 relative">
+    <label class="block text-sm font-medium text-gray-700 mb-2">Repositorios Existentes</label>
+    
+    <!-- Menú Desplegable Custom -->
+    <div class="relative">
+    <button id="customSelectBtn" onclick="toggleCustomSelect()" class="w-full flex justify-between items-center px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none text-left">
+     <span id="customSelectLabel" class="text-gray-500 truncate">Cargando repositorios...</span>
+     <i data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+    </button>
+    
+    <div id="customSelectMenu" class="hidden absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
+     <ul id="repoList" class="max-h-48 overflow-y-auto">
+      <!-- Las opciones se inyectarán aquí -->
+     </ul>
+     <!-- Paginación -->
+     <div class="flex justify-between items-center p-2 border-t border-gray-200 bg-gray-50 text-xs">
+      <button id="prevPageBtn" onclick="changeRepoPage(-1)" class="px-2 py-1 text-blue-600 hover:bg-blue-100 rounded disabled:text-gray-400 disabled:hover:bg-transparent transition">Anterior</button>
+      <span id="pageIndicator" class="text-gray-500 font-medium">Pág 1</span>
+      <button id="nextPageBtn" onclick="changeRepoPage(1)" class="px-2 py-1 text-blue-600 hover:bg-blue-100 rounded disabled:text-gray-400 disabled:hover:bg-transparent transition">Siguiente</button>
+     </div>
+    </div>
+    </div>
+   </div>
+
+   <!-- Crear nuevo -->
+   <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+    <label class="block text-sm font-medium text-gray-700 mb-2">O crear uno nuevo</label>
+    <div class="flex flex-col space-y-2">
+    <input type="text" id="newRepoName" placeholder="nombre-del-repo" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+    <label class="flex items-center text-sm text-gray-600">
+     <input type="checkbox" id="isPrivate" class="mr-2 rounded text-blue-600" checked>
+     Repositorio Privado
+    </label>
+    <button onclick="createRepo()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm">
+     Crear Repositorio
+    </button>
+    </div>
+   </div>
+  </div>
+  <div id="repoStatus" class="hidden mt-3 text-sm p-3 rounded-md"></div>
+  </div>
+
+  <!-- PASO 3: CARGA DE CARPETA (Oculto al inicio) -->
+  <div id="step3" class="hidden opacity-50 pointer-events-none bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 transition-all duration-300">
+  <h2 class="text-xl font-semibold mb-4 flex items-center">
+   <span class="bg-blue-100 text-blue-700 rounded-full w-8 h-8 flex items-center justify-center mr-3 text-sm">3</span>
+   Subir Carpeta
+  </h2>
+  
+  <div class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors bg-gray-50">
+   <i data-lucide="folder-up" class="w-12 h-12 mx-auto text-gray-400 mb-3"></i>
+   <h3 class="text-lg font-medium text-gray-900 mb-1">Selecciona una carpeta para subir</h3>
+   <p class="text-sm text-gray-500 mb-4">Se mantendrá la estructura de archivos. Si incluyes un <code>credentials.json</code>, se usarán sus permisos.</p>
+   
+   <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden" onchange="handleFolderSelect(event)">
+   <label for="folderInput" class="cursor-pointer inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-gray-900 hover:bg-gray-800 transition-colors">
+    Explorar Carpeta
+   </label>
+   
+   <div id="selectedFolderInfo" class="hidden mt-4 text-sm text-gray-700 font-medium bg-blue-50 py-3 px-4 rounded-md border border-blue-100 text-left">
+    <div class="flex justify-between items-center mb-1">
+    <span id="fileCountMsg">0 archivos listos para subir.</span>
+    </div>
+    
+    <!-- Selector dinámico de index.html -->
+    <div id="indexHtmlSelector" class="hidden mt-3 p-3 bg-yellow-100 border border-yellow-300 rounded-md text-yellow-800 text-xs shadow-inner">
+    <p class="mb-2 font-semibold"><i data-lucide="alert-triangle" class="w-4 h-4 inline mr-1 -mt-0.5"></i> Para activar GitHub Pages requieres un <code>index.html</code>.</p>
+    <p class="mb-1">No detectamos uno. Selecciona un archivo para renombrarlo automáticamente:</p>
+    <select id="htmlToRename" class="w-full mt-1 p-1.5 border border-yellow-400 rounded bg-white text-gray-800 outline-none focus:ring-1 focus:ring-yellow-500"></select>
+    </div>
+   </div>
+  </div>
+
+  <div class="mt-6">
+   <button id="btnUpload" onclick="startUpload()" disabled class="w-full bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg flex justify-center items-center transition-colors">
+    <i data-lucide="cloud-upload" class="w-5 h-5 mr-2"></i> Comenzar Subida
+   </button>
+  </div>
+  </div>
+
+  <!-- LOGS DE SUBIDA -->
+  <div id="logSection" class="hidden bg-gray-900 rounded-xl shadow-sm overflow-hidden flex flex-col h-64 mb-6">
+  <div class="bg-gray-800 px-4 py-2 flex justify-between items-center border-b border-gray-700">
+   <span class="text-gray-300 text-sm font-mono flex items-center">
+    <i data-lucide="terminal" class="w-4 h-4 mr-2"></i> Registro de Actividad
+   </span>
+   <span id="progressText" class="text-green-400 text-sm font-mono">0%</span>
+  </div>
+  <div id="logArea" class="p-4 overflow-y-auto flex-1 font-mono text-xs text-gray-300 space-y-1">
+   <!-- Logs aparecerán aquí -->
+  </div>
+  </div>
+
+  <!-- SECCIÓN FINAL: URLs Y HEARTBEAT -->
+  <div id="finalUrlsSection" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 p-6 transition-all duration-500">
+  <h2 class="text-xl font-semibold mb-4 text-gray-900 flex items-center">
+   <i data-lucide="rocket" class="w-6 h-6 mr-2 text-indigo-600"></i> Despliegue Exitoso
+  </h2>
+  
+  <div class="space-y-4">
+   <!-- Repo URL -->
+   <div class="bg-gray-50 p-3 rounded-lg border border-gray-200 flex justify-between items-center">
+    <div>
+    <p class="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">URL del Repositorio</p>
+    <a id="linkRepo" href="#" target="_blank" class="text-sm font-mono text-blue-600 hover:underline break-all"></a>
+    </div>
+    <a id="btnLinkRepo" href="#" target="_blank" class="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition"><i data-lucide="external-link" class="w-5 h-5"></i></a>
+   </div>
+
+   <!-- Pages URL & Heartbeat -->
+   <div id="pagesUrlContainer" class="bg-indigo-50 p-4 rounded-lg border border-indigo-100 relative overflow-hidden">
+    <p class="text-xs text-indigo-500 font-medium uppercase tracking-wider mb-2">GitHub Pages Web App</p>
+    
+    <div id="heartbeatStatus" class="flex items-center text-sm font-medium text-indigo-800">
+    <span class="relative flex h-3 w-3 mr-3">
+     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+     <span class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
+    </span>
+    Esperando a que la Action termine el despliegue...
+    </div>
+
+    <div id="pagesLinkReady" class="hidden mt-1 flex justify-between items-center">
+    <a id="linkPages" href="#" target="_blank" class="text-base font-mono text-indigo-700 hover:underline break-all font-bold"></a>
+    <a id="btnLinkPages" href="#" target="_blank" class="ml-2 p-2 bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm rounded-lg transition text-xs font-bold flex items-center"><i data-lucide="globe" class="w-4 h-4 mr-1"></i> Visitar WebApp</a>
+    </div>
+   </div>
+  </div>
+  
+  <div class="mt-6 text-center">
+   <button onclick="location.reload()" class="text-sm text-gray-500 hover:text-gray-900 underline">Subir otro proyecto</button>
+  </div>
+  </div>
+
+ </div>
+
+ <script>
+  // Inicializar iconos
+  lucide.createIcons();
+
+  // Variables de estado
+  let globalToken = '';
+  let uploadToken = ''; // Este puede cambiar si encontramos credentials.json
+  let username = '';
+  let selectedFiles = [];
+  let finalRepoName = '';
+  
+  // Paginación de Repositorios
+  let currentRepoPage = 1;
+  let perPage = 15;
+  let isDropdownOpen = false;
+
+  // Constantes de API
+  const API_BASE = 'https://api.github.com';
+
+  // Recuperar de LocalStorage al cargar la página
+  window.onload = () => {
+  const savedPat = localStorage.getItem('github_pat');
+  if (savedPat) document.getElementById('initialToken').value = savedPat;
+  
+  const savedDiscord = localStorage.getItem('discord_webhook');
+  if (savedDiscord) document.getElementById('discordWebhook').value = savedDiscord;
+  
+  const savedSlack = localStorage.getItem('slack_webhook');
+  if (savedSlack) document.getElementById('slackWebhook').value = savedSlack;
+  };
+
+  // Cerrar dropdown al hacer click fuera
+  document.addEventListener('click', (e) => {
+  const dropdown = document.getElementById('customSelectMenu');
+  const btn = document.getElementById('customSelectBtn');
+  if (isDropdownOpen && !dropdown.contains(e.target) && !btn.contains(e.target)) {
+   toggleCustomSelect();
+  }
+  });
+
+  // Función para enviar notificaciones a Webhooks
+  async function sendNotification(message) {
+  const discordUrl = document.getElementById('discordWebhook').value.trim();
+  const slackUrl = document.getElementById('slackWebhook').value.trim();
+
+  if (discordUrl) {
+   try {
+    await fetch(discordUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: message })
+    });
+   } catch (e) { console.error('Error enviando a Discord:', e); }
+  }
+
+  if (slackUrl) {
+   try {
+    await fetch(slackUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: message })
+    });
+   } catch (e) { console.error('Error enviando a Slack:', e); }
+  }
+  }
+
+  // Funciones de UI
+  function showLog(message, type = 'info') {
+  const logArea = document.getElementById('logArea');
+  const div = document.createElement('div');
+  const time = new Date().toLocaleTimeString();
+  
+  let color = 'text-gray-300';
+  if(type === 'error') color = 'text-red-400';
+  if(type === 'success') color = 'text-green-400';
+  if(type === 'warn') color = 'text-yellow-400';
+
+  div.className = color;
+  div.innerHTML = `<span class="text-gray-500">[${time}]</span> ${message}`;
+  logArea.appendChild(div);
+  logArea.scrollTop = logArea.scrollHeight;
+  }
+
+  function toggleStep(stepId, enable) {
+  const el = document.getElementById(stepId);
+  if(enable) {
+   el.classList.remove('opacity-50', 'pointer-events-none');
+  } else {
+   el.classList.add('opacity-50', 'pointer-events-none');
+  }
+  }
+
+  function toggleCustomSelect() {
+  const menu = document.getElementById('customSelectMenu');
+  isDropdownOpen = !isDropdownOpen;
+  if (isDropdownOpen) {
+   menu.classList.remove('hidden');
+  } else {
+   menu.classList.add('hidden');
+  }
+  }
+
+  // Paso 1: Autenticación
+  async function authenticate() {
+  const tokenInput = document.getElementById('initialToken').value.trim();
+  const errorDiv = document.getElementById('authError');
+  const btn = document.getElementById('btnConnect');
+
+  if (!tokenInput) {
+   errorDiv.textContent = 'Por favor, ingresa un token válido.';
+   errorDiv.classList.remove('hidden');
+   return;
+  }
+
+  try {
+   btn.innerHTML = '<div class="loader ease-linear rounded-full border-2 border-t-2 border-white h-5 w-5 mr-2"></div> Conectando...';
+   btn.disabled = true;
+   errorDiv.classList.add('hidden');
+
+   const response = await fetch(`${API_BASE}/user`, {
+    headers: { 'Authorization': `token ${tokenInput}` }
+   });
+
+   if (!response.ok) throw new Error('Token inválido o sin permisos');
+
+   const data = await response.json();
+   username = data.login;
+   globalToken = tokenInput;
+   uploadToken = tokenInput;
+
+   localStorage.setItem('github_pat', tokenInput);
+   localStorage.setItem('discord_webhook', document.getElementById('discordWebhook').value.trim());
+   localStorage.setItem('slack_webhook', document.getElementById('slackWebhook').value.trim());
+
+   document.getElementById('step2').classList.remove('hidden');
+   setTimeout(() => toggleStep('step2', true), 100);
+   
+   btn.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5 mr-2"></i> Conectado como ${username}`;
+   btn.classList.replace('bg-gray-900', 'bg-green-600');
+   btn.classList.replace('hover:bg-gray-800', 'hover:bg-green-700');
+   lucide.createIcons();
+
+   document.getElementById('customSelectLabel').textContent = 'Selecciona un repositorio...';
+   await loadRepositories(1);
+
+  } catch (error) {
+   errorDiv.textContent = error.message;
+   errorDiv.classList.remove('hidden');
+   btn.innerHTML = '<i data-lucide="log-in" class="w-5 h-5 mr-2"></i> Conectar';
+   btn.disabled = false;
+   lucide.createIcons();
+  }
+  }
+
+  // Paso 2: Cargar y Crear Repositorios (Con paginación)
+  async function loadRepositories(page) {
+  const list = document.getElementById('repoList');
+  currentRepoPage = page;
+  document.getElementById('pageIndicator').textContent = `Pág ${currentRepoPage}`;
+  
+  try {
+   list.innerHTML = '<li class="px-4 py-3 text-sm text-gray-500 text-center">Cargando...</li>';
+   
+   const response = await fetch(`${API_BASE}/user/repos?per_page=${perPage}&page=${currentRepoPage}&sort=updated`, {
+    headers: { 'Authorization': `token ${globalToken}` }
+   });
+   
+   // Evaluar encabezado Link para saber si hay "next"
+   const linkHeader = response.headers.get('Link');
+   const hasNext = linkHeader && linkHeader.includes('rel="next"');
+   
+   document.getElementById('prevPageBtn').disabled = (currentRepoPage === 1);
+   document.getElementById('nextPageBtn').disabled = !hasNext;
+
+   const repos = await response.json();
+   list.innerHTML = '';
+   
+   if (repos.length === 0) {
+    list.innerHTML = '<li class="px-4 py-3 text-sm text-gray-500 text-center">No hay repositorios aquí</li>';
+    return;
+   }
+
+   repos.forEach(repo => {
+    const li = document.createElement('li');
+    li.className = 'px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-0 flex items-center justify-between transition-colors';
+    li.innerHTML = `<span>${repo.name}</span> <span class="text-xs px-2 py-0.5 rounded-full ${repo.private ? 'bg-gray-200 text-gray-600' : 'bg-green-100 text-green-700'}">${repo.private ? 'Privado' : 'Público'}</span>`;
+    
+    li.onclick = () => {
+    finalRepoName = repo.name;
+    document.getElementById('customSelectLabel').innerHTML = `<span class="font-medium text-gray-900">${repo.name}</span>`;
+    toggleCustomSelect();
+    
+    document.getElementById('step3').classList.remove('hidden');
+    setTimeout(() => toggleStep('step3', true), 100);
+    };
+    list.appendChild(li);
+   });
+
+  } catch (error) {
+   list.innerHTML = '<li class="px-4 py-3 text-sm text-red-500 text-center">Error cargando API</li>';
+  }
+  }
+
+  function changeRepoPage(delta) {
+  loadRepositories(currentRepoPage + delta);
+  }
+
+  async function createRepo() {
+  const nameInput = document.getElementById('newRepoName').value.trim();
+  const isPrivate = document.getElementById('isPrivate').checked;
+  const statusDiv = document.getElementById('repoStatus');
+
+  if(!nameInput) return;
+
+  statusDiv.className = 'mt-3 text-sm p-3 rounded-md bg-blue-50 text-blue-700 block';
+  statusDiv.textContent = 'Creando repositorio...';
+
+  try {
+   const response = await fetch(`${API_BASE}/user/repos`, {
+    method: 'POST',
+    headers: { 
+    'Authorization': `token ${globalToken}`,
+    'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+    name: nameInput,
+    private: isPrivate,
+    auto_init: true
+    })
+   });
+
+   const data = await response.json();
+
+   if (!response.ok) throw new Error(data.message || 'Error creando el repositorio');
+
+   statusDiv.className = 'mt-3 text-sm p-3 rounded-md bg-green-50 text-green-700 block';
+   statusDiv.textContent = `Repositorio '${data.name}' creado con éxito.`;
+   
+   finalRepoName = data.name;
+   
+   await loadRepositories(1);
+   document.getElementById('customSelectLabel').innerHTML = `<span class="font-medium text-gray-900">${data.name}</span>`;
+   
+   document.getElementById('step3').classList.remove('hidden');
+   setTimeout(() => toggleStep('step3', true), 100);
+
+   sendNotification(`📁 El usuario **${username}** ha creado el repositorio **${data.name}** (${isPrivate ? 'Privado' : 'Público'}).
+
+🔗 URL: https://github.com/${username}/${data.name}`);
+
+  } catch (error) {
+   statusDiv.className = 'mt-3 text-sm p-3 rounded-md bg-red-50 text-red-700 block';
+   statusDiv.textContent = error.message;
+  }
+  }
+
+  // Paso 3: Manejo de Archivos e index.html
+  async function handleFolderSelect(event) {
+  const files = event.target.files;
+  if(files.length === 0) return;
+
+  selectedFiles = Array.from(files);
+  const selectorUI = document.getElementById('indexHtmlSelector');
+  const htmlSelect = document.getElementById('htmlToRename');
+  selectorUI.classList.add('hidden');
+  htmlSelect.innerHTML = '';
+  
+  // Buscar credentials.json
+  const credFileIndex = selectedFiles.findIndex(f => f.name === 'credentials.json');
+  let baseMsg = "";
+  
+  if (credFileIndex !== -1) {
+   const credFile = selectedFiles[credFileIndex];
+   try {
+    const text = await credFile.text();
+    const json = JSON.parse(text);
+    if (json.token || json.PAT || json.github_token) {
+    uploadToken = json.token || json.PAT || json.github_token;
+    baseMsg = `¡Archivo <b>credentials.json</b> detectado! Se usarán sus permisos.<br><span class="text-xs text-gray-500 font-normal">(${selectedFiles.length - 1} archivos para subir)</span>`;
+    }
+    selectedFiles.splice(credFileIndex, 1);
+   } catch (e) { console.error("Error en credentials.json", e); }
+  } else {
+   uploadToken = globalToken;
+   baseMsg = `<b>${selectedFiles.length}</b> archivos listos para subir.`;
+  }
+  
+  document.getElementById('fileCountMsg').innerHTML = baseMsg;
+
+  // Gestión de index.html para Pages
+  let hasIndexHtml = false;
+  let htmlFiles = [];
+
+  selectedFiles.forEach(file => {
+   const pathParts = file.webkitRelativePath.split('/');
+   pathParts.shift();
+   const cleanPath = pathParts.join('/');
+   
+   if (cleanPath.toLowerCase() === 'index.html') hasIndexHtml = true;
+   if (cleanPath.toLowerCase().endsWith('.html')) htmlFiles.push(cleanPath);
+  });
+
+  if (!hasIndexHtml && htmlFiles.length > 0) {
+   // Ofrecer renombrar
+   htmlFiles.forEach(path => {
+    const opt = document.createElement('option');
+    opt.value = path;
+    opt.textContent = path;
+    htmlSelect.appendChild(opt);
+   });
+   selectorUI.classList.remove('hidden');
+  }
+
+  document.getElementById('selectedFolderInfo').classList.remove('hidden');
+  document.getElementById('btnUpload').disabled = false;
+  }
+
+  function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+   const reader = new FileReader();
+   reader.readAsDataURL(file);
+   reader.onload = () => resolve(reader.result.split(',')[1]);
+   reader.onerror = error => reject(error);
+  });
+  }
+
+  // Activar GitHub Pages mediante API
+  async function enableGitHubPages(repo) {
+  try {
+   showLog(`Intentando activar GitHub Pages...`, 'info');
+   
+   // Primero necesitamos saber la rama por defecto (main o master)
+   const repoRes = await fetch(`${API_BASE}/repos/${username}/${repo}`, {
+    headers: { 'Authorization': `token ${uploadToken}` }
+   });
+   const repoData = await repoRes.json();
+   const branch = repoData.default_branch || 'main';
+
+   const response = await fetch(`${API_BASE}/repos/${username}/${repo}/pages`, {
+    method: 'POST',
+    headers: {
+    'Authorization': `token ${uploadToken}`,
+    'Accept': 'application/vnd.github.v3+json',
+    'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+    source: { branch: branch, path: '/' }
+    })
+   });
+
+   if (response.status === 201) {
+    showLog(`✅ GitHub Pages activado correctamente (rama: ${branch}).`, 'success');
+   } else if (response.status === 409) {
+    showLog(`GitHub Pages ya estaba activado en este repositorio.`, 'info');
+   } else {
+    showLog(`Aviso: No se pudo activar GitHub Pages (Status ${response.status}). Asegúrate que el repo sea Público o tengas un plan Pro.`, 'warn');
+   }
+  } catch (e) {
+   showLog(`Aviso: Error al contactar la API de Pages: ${e.message}`, 'warn');
+  }
+  }
+
+  // Heartbeat para verificar disponibilidad de Pages
+  function startPagesHeartbeat(pagesUrl) {
+  const statusDiv = document.getElementById('heartbeatStatus');
+  const linkReadyDiv = document.getElementById('pagesLinkReady');
+  let attempts = 0;
+  const maxAttempts = 60; // 5 minutos máximo (5 seg * 60)
+
+  const check = async () => {
+   attempts++;
+   try {
+    // Agregar timestamp para evitar caché
+    const res = await fetch(pagesUrl + '?t=' + Date.now(), { method: 'HEAD', cache: 'no-store' });
+    if (res.status === 200 || res.status === 304) {
+    // ¡Está vivo!
+    statusDiv.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5 mr-2 text-green-500"></i> <span class="text-green-700">¡Despliegue finalizado! WebApp Online.</span>`;
+    linkReadyDiv.classList.remove('hidden');
+    lucide.createIcons();
+    return; // Terminar loop
+    }
+   } catch(e) { /* ignorar errores de cors momentáneos durante DNS */ }
+
+   if (attempts < maxAttempts) {
+    setTimeout(check, 5000); // Reintentar en 5s
+   } else {
+    statusDiv.innerHTML = `<i data-lucide="alert-circle" class="w-5 h-5 mr-2 text-yellow-500"></i> <span class="text-yellow-700">El proceso de GitHub tarda un poco más. La página debería estar lista pronto.</span>`;
+    linkReadyDiv.classList.remove('hidden');
+    lucide.createIcons();
+   }
+  };
+
+  // Iniciar primer chequeo después de 10 segundos
+  setTimeout(check, 10000);
+  }
+
+  // Paso 4: Proceso de Subida
+  async function startUpload() {
+  if(!finalRepoName || selectedFiles.length === 0) return;
+
+  const htmlSelect = document.getElementById('htmlToRename');
+  const fileToRenameToHtml = htmlSelect && !document.getElementById('indexHtmlSelector').classList.contains('hidden') ? htmlSelect.value : null;
+
+  document.getElementById('logSection').classList.remove('hidden');
+  document.getElementById('btnUpload').disabled = true;
+  document.getElementById('btnUpload').innerHTML = '<div class="loader ease-linear rounded-full border-2 border-t-2 border-white h-5 w-5 mr-2"></div> Subiendo...';
+  
+  toggleStep('step1', false);
+  toggleStep('step2', false);
+  
+  showLog(`Iniciando carga hacia: ${username}/${finalRepoName}`, 'info');
+
+  let successCount = 0;
+  let errorCount = 0;
+
+  for (let i = 0; i < selectedFiles.length; i++) {
+   const file = selectedFiles[i];
+   
+   const pathParts = file.webkitRelativePath.split('/');
+   pathParts.shift(); 
+   let repoPath = pathParts.join('/');
+
+   if (!repoPath) continue;
+
+   // Lógica para renombrar archivo a index.html
+   let commitMessage = `Upload ${repoPath} via WebApp (GitHub Pages deployment)`;
+   if (fileToRenameToHtml && repoPath === fileToRenameToHtml) {
+    showLog(`Renombrando ${repoPath} -> index.html para GitHub Pages`, 'info');
+    repoPath = 'index.html';
+    commitMessage += ' - Renamed to index.html automatically';
+   }
+
+   try {
+    const base64Content = await fileToBase64(file);
+    
+    let body = { message: commitMessage, content: base64Content };
+
+    let response = await fetch(`${API_BASE}/repos/${username}/${finalRepoName}/contents/${repoPath}`, {
+    method: 'PUT',
+    headers: { 'Authorization': `token ${uploadToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+    });
+
+    if (response.status === 422) {
+    showLog(`[${repoPath}] ya existe, obteniendo SHA para sobreescribir...`, 'warn');
+    
+    const getResponse = await fetch(`${API_BASE}/repos/${username}/${finalRepoName}/contents/${repoPath}`, {
+     headers: { 'Authorization': `token ${uploadToken}` }
+    });
+    
+    if(getResponse.ok) {
+     const currentFile = await getResponse.json();
+     body.sha = currentFile.sha;
+     
+     response = await fetch(`${API_BASE}/repos/${username}/${finalRepoName}/contents/${repoPath}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `token ${uploadToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+     });
+    }
+    }
+
+    if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message);
+    }
+
+    successCount++;
+    showLog(`✅ Subido: ${repoPath}`, 'success');
+
+   } catch (error) {
+    errorCount++;
+    showLog(`❌ Error en ${repoPath}: ${error.message}`, 'error');
+   }
+
+   const percent = Math.round(((i + 1) / selectedFiles.length) * 100);
+   document.getElementById('progressText').textContent = `${percent}%`;
+  }
+
+  showLog('============================', 'info');
+  showLog(`Carga finalizada. Éxitos: ${successCount}, Errores: ${errorCount}`, successCount > 0 ? 'success' : 'error');
+  
+  document.getElementById('btnUpload').classList.add('hidden');
+  
+  // Activar GitHub Pages y mostrar resultados
+  await enableGitHubPages(finalRepoName);
+
+  const repoUrl = `https://github.com/${username}/${finalRepoName}`;
+  const pagesUrl = `https://${username}.github.io/${finalRepoName}/`;
+
+  // Configurar UI de Resultados
+  document.getElementById('finalUrlsSection').classList.remove('hidden');
+  document.getElementById('linkRepo').href = repoUrl;
+  document.getElementById('linkRepo').textContent = repoUrl;
+  document.getElementById('btnLinkRepo').href = repoUrl;
+  
+  document.getElementById('linkPages').href = pagesUrl;
+  document.getElementById('linkPages').textContent = pagesUrl;
+  document.getElementById('btnLinkPages').href = pagesUrl;
+
+  // Iniciar Heartbeat
+  startPagesHeartbeat(pagesUrl);
+
+  // Notificación con URLs
+  sendNotification(`🚀 **Despliegue Completado**
+
+El usuario **${username}** subió archivos a **${finalRepoName}** (Éxito: ${successCount}, Fallos: ${errorCount}).
+
+
+
+📁 **Repo:** ${repoUrl}
+
+🌐 **Live WebApp:** ${pagesUrl}`);
+  }
+ </script>
+</body>
+</html>
